@@ -1,0 +1,12 @@
+# Build artifacts
+/build/
+/CMakeFiles/
+/CMakeCache.txt
+/*.cmake
+/*.make
+
+# VS Code
+.vscode/
+
+# Misc
+*.log
