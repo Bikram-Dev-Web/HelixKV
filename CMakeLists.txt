@@ -8,4 +8,6 @@ add_executable(
     helixkv
     src/main.cpp
     src/server.cpp
+    src/command_handler.cpp
+    src/storage.cpp
 )
