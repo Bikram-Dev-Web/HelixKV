@@ -10,11 +10,13 @@ Storage::Storage()
 }
 
 void Storage::set(const string& key , const string& value){
+    std::lock_guard<std::mutex> lock(mutex_);
     data_[key]=value;
     persistence_.save(data_);
 }
 
 string Storage::get(const string& key){
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = data_.find(key);
 
     if(it==data_.end()){
@@ -25,6 +27,7 @@ string Storage::get(const string& key){
 }
 
 void Storage::del(const string& key){
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it =  data_.find(key);
 
     if(it==data_.end()){
@@ -36,6 +39,7 @@ void Storage::del(const string& key){
 }
 
 bool Storage::exist(const string& key){
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it =  data_.find(key);
 
     if(it==data_.end()){return false;}
