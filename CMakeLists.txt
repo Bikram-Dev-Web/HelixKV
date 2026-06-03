@@ -10,4 +10,5 @@ add_executable(
     src/server.cpp
     src/command_handler.cpp
     src/storage.cpp
+    src/persistence.cpp
 )

@@ -30,6 +30,16 @@ std::string CommandHandler::handle(const std::string& command){
         if(parts.size()<2)return "ERR usage: GET key\n";
         return storage_.get(parts[1]) + "\n";
     }
+    else if (cmd=="DEL"){
+        if(parts.size()<2)return "ERR usage: DEL key\n";
+        storage_.del(parts[1]);
+        return "DELETED\n";
+    }
+    else if(cmd=="EXISTS"){
+        if(parts.size()<2)return "ERR usage: INPUT A KEY";
+        bool ans = storage_.exist(parts[1]);
+        return to_string(ans) + "\n";
+    }
 
     return "ERR UNKNOWN COMMAND\n";
 }
