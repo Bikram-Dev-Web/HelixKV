@@ -213,6 +213,38 @@ void test_key_expiration_and_ttls() {
     std::cout << "test_key_expiration_and_ttls passed!" << std::endl;
 }
 
+void test_resp_protocol_formatting() {
+    std::cout << "Running test_resp_protocol_formatting..." << std::endl;
+    CommandHandler handler;
+    handler.getStorage().clear();
+
+    // Test PING
+    assert(handler.handleCommand({"PING"}, true) == "+PONG\r\n");
+
+    // Test SET
+    assert(handler.handleCommand({"SET", "mykey", "myval"}, true) == "+OK\r\n");
+
+    // Test GET
+    assert(handler.handleCommand({"GET", "mykey"}, true) == "$5\r\nmyval\r\n");
+    assert(handler.handleCommand({"GET", "nonexistent"}, true) == "$-1\r\n");
+
+    // Test EXISTS
+    assert(handler.handleCommand({"EXISTS", "mykey"}, true) == ":1\r\n");
+    assert(handler.handleCommand({"EXISTS", "nonexistent"}, true) == ":0\r\n");
+
+    // Test SIZE
+    assert(handler.handleCommand({"SIZE"}, true) == ":1\r\n");
+
+    // Test KEYS
+    assert(handler.handleCommand({"KEYS"}, true) == "*1\r\n$5\r\nmykey\r\n");
+
+    // Test DEL
+    assert(handler.handleCommand({"DEL", "mykey"}, true) == ":1\r\n");
+    assert(handler.handleCommand({"DEL", "mykey"}, true) == ":0\r\n");
+
+    std::cout << "test_resp_protocol_formatting passed!" << std::endl;
+}
+
 int main() {
     std::cout << "=== HelixKV Test Suite ===" << std::endl;
     
@@ -221,6 +253,7 @@ int main() {
     test_command_handler();
     test_asynchronous_compaction();
     test_key_expiration_and_ttls();
+    test_resp_protocol_formatting();
 
     std::cout << "\nALL TESTS PASSED SUCCESSFULLY!" << std::endl;
     return 0;

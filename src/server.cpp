@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <sstream>
 
 #ifdef _WIN32
   #include <winsock2.h>
@@ -192,6 +193,35 @@ void Server::start()
 #endif
 }
 
+bool Server::sendResponse(socket_t client_fd, const std::string& response)
+{
+    size_t total_sent = 0;
+    const char* resp_ptr = response.c_str();
+    size_t resp_len = response.size();
+
+    while(total_sent < resp_len)
+    {
+        int sent = ::send(client_fd, resp_ptr + total_sent, (int)(resp_len - total_sent), 0);
+        if(sent <= 0)
+        {
+#ifdef _WIN32
+            int err = WSAGetLastError();
+            if(err != WSAEWOULDBLOCK) {
+                return false;
+            }
+#else
+            if(errno != EWOULDBLOCK && errno != EAGAIN) {
+                return false;
+            }
+#endif
+            std::this_thread::yield();
+            continue;
+        }
+        total_sent += sent;
+    }
+    return true;
+}
+
 void Server::handleClientData(socket_t client_fd)
 {
     char buffer[4096] = {0};
@@ -245,63 +275,128 @@ void Server::handleClientData(socket_t client_fd)
         return;
     }
 
-    // Process all full newline-delimited commands
+    // Process all fully received commands from this client
     std::string& client_buf = client_buffers_[client_fd];
-    size_t newline_pos;
-    while((newline_pos = client_buf.find('\n')) != std::string::npos)
+
+    while(true)
     {
-        std::string command = client_buf.substr(0, newline_pos);
-        
-        // Remove trailing \r if present (Telnet/network compatibility)
-        if(!command.empty() && command.back() == '\r')
-        {
-            command.pop_back();
+        if (client_buf.empty()) {
+            break;
         }
 
-        if(!command.empty())
+        // Check if starts with RESP array (*)
+        if (client_buf[0] == '*')
         {
-            std::string response = handler_.handle(command);
-            
-            // Handle partial writes in a loop
-            size_t total_sent = 0;
-            const char* resp_ptr = response.c_str();
-            size_t resp_len = response.size();
-            bool write_failed = false;
-
-            while(total_sent < resp_len)
-            {
-                int sent = ::send(client_fd, resp_ptr + total_sent, (int)(resp_len - total_sent), 0);
-                if(sent <= 0)
-                {
-#ifdef _WIN32
-                    int err = WSAGetLastError();
-                    if(err != WSAEWOULDBLOCK) {
-                        write_failed = true;
-                        break;
-                    }
-#else
-                    if(errno != EWOULDBLOCK && errno != EAGAIN) {
-                        write_failed = true;
-                        break;
-                    }
-#endif
-                    std::this_thread::yield();
-                    continue;
-                }
-                total_sent += sent;
+            size_t first_crlf = client_buf.find("\r\n");
+            if (first_crlf == std::string::npos) {
+                break; // Incomplete array header
             }
 
-            if(write_failed)
+            int num_elements = 0;
+            try {
+                num_elements = std::stoi(client_buf.substr(1, first_crlf - 1));
+            } catch (...) {
+                std::cerr << "Malformed RESP array size. Closing connection." << std::endl;
+                CLOSE_SOCKET(client_fd);
+                clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+                client_buffers_.erase(client_fd);
+                return;
+            }
+
+            if (num_elements <= 0) {
+                client_buf.erase(0, first_crlf + 2);
+                continue;
+            }
+
+            size_t current_pos = first_crlf + 2;
+            std::vector<std::string> parts;
+            bool parse_success = true;
+
+            for (int i = 0; i < num_elements; ++i)
             {
+                if (current_pos >= client_buf.size() || client_buf[current_pos] != '$') {
+                    parse_success = false;
+                    break;
+                }
+
+                size_t next_crlf = client_buf.find("\r\n", current_pos);
+                if (next_crlf == std::string::npos) {
+                    parse_success = false;
+                    break;
+                }
+
+                int bulk_len = 0;
+                try {
+                    bulk_len = std::stoi(client_buf.substr(current_pos + 1, next_crlf - current_pos - 1));
+                } catch (...) {
+                    parse_success = false;
+                    break;
+                }
+
+                if (bulk_len < 0) {
+                    parts.push_back("");
+                    current_pos = next_crlf + 2;
+                    continue;
+                }
+
+                if (next_crlf + 2 + bulk_len + 2 > client_buf.size()) {
+                    parse_success = false;
+                    break;
+                }
+
+                std::string element = client_buf.substr(next_crlf + 2, bulk_len);
+                parts.push_back(element);
+                current_pos = next_crlf + 2 + bulk_len + 2;
+            }
+
+            if (!parse_success) {
+                break;
+            }
+
+            std::string response = handler_.handleCommand(parts, true);
+            if (!sendResponse(client_fd, response)) {
                 std::cerr << "Client write failed. Closing socket." << std::endl;
                 CLOSE_SOCKET(client_fd);
                 clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
                 client_buffers_.erase(client_fd);
                 return;
             }
-        }
 
-        // Erase command from session buffer
-        client_buf.erase(0, newline_pos + 1);
+            client_buf.erase(0, current_pos);
+        }
+        else
+        {
+            size_t newline_pos = client_buf.find('\n');
+            if (newline_pos == std::string::npos) {
+                break;
+            }
+
+            std::string command = client_buf.substr(0, newline_pos);
+            if (!command.empty() && command.back() == '\r') {
+                command.pop_back();
+            }
+
+            if (!command.empty()) {
+                std::stringstream ss(command);
+                std::string part;
+                std::vector<std::string> parts;
+                while (ss >> part) {
+                    parts.push_back(part);
+                }
+
+                if (!parts.empty()) {
+                    std::string response = handler_.handleCommand(parts, false);
+                    if (!sendResponse(client_fd, response)) {
+                        std::cerr << "Client write failed. Closing socket." << std::endl;
+                        CLOSE_SOCKET(client_fd);
+                        clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+                        client_buffers_.erase(client_fd);
+                        return;
+                    }
+                }
+            }
+
+            client_buf.erase(0, newline_pos + 1);
+        }
     }
 }

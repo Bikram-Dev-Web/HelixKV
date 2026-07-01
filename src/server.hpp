@@ -20,6 +20,7 @@ public:
 
 private:
     void handleClientData(socket_t client_fd);
+    bool sendResponse(socket_t client_fd, const std::string& response);
 
     int port_;
 
