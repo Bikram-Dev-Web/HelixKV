@@ -7,7 +7,8 @@ class CommandHandler
 private:
     Storage storage_;
 public:
-    std:: string handle(const std:: string& command);
+    std::string handle(const std::string& command);
+    Storage& getStorage();
 };
 
 

@@ -62,8 +62,11 @@ std::string CommandHandler::handle(const std::string& command){
         return "OK\n";
     }
     else if(cmd=="BGREWRITEAOF"){
+        if (storage_.isRewriting()) {
+            return "ERR Background rewrite already in progress\n";
+        }
         storage_.rewriteAOF();
-        return "OK\n";
+        return "Background rewrite of AOF started\n";
     }
     else if(cmd=="INFO"){
         std::string info = "# Server\n";
@@ -75,4 +78,8 @@ std::string CommandHandler::handle(const std::string& command){
     }
 
     return "ERR UNKNOWN COMMAND\n";
+}
+
+Storage& CommandHandler::getStorage() {
+    return storage_;
 }

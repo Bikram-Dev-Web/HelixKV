@@ -33,6 +33,11 @@ void Persistence::append(const std::string& op, const std::string& key, const st
     }
 }
 
+std::string Persistence::getFilename() const
+{
+    return filename_;
+}
+
 void Persistence::rewrite(const std::unordered_map<std::string, std::string>& data)
 {
     std::string temp_filename = filename_ + ".tmp";
@@ -49,15 +54,6 @@ void Persistence::rewrite(const std::unordered_map<std::string, std::string>& da
         file << "SET " << key << " " << value << "\n";
     }
     file.close();
-
-    // Remove the old AOF file (required on Windows before renaming)
-    std::remove(filename_.c_str());
-
-    // Rename temp file to original AOF name
-    if(std::rename(temp_filename.c_str(), filename_.c_str()) != 0)
-    {
-        std::perror("Failed to rename temporary AOF file");
-    }
 }
 
 std::unordered_map<std::string, std::string> Persistence::load()

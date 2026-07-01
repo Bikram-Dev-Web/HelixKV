@@ -113,8 +113,12 @@ void Server::start()
             }
         }
 
-        // Block until any socket has pending read operations
-        int activity = select((int)(max_fd + 1), &read_fds, nullptr, nullptr, nullptr);
+        // Block until any socket has pending read operations or timeout expires (to check AOF rewrite status)
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000; // 100ms
+
+        int activity = select((int)(max_fd + 1), &read_fds, nullptr, nullptr, &timeout);
 
         if(activity < 0)
         {
@@ -156,6 +160,12 @@ void Server::start()
             {
                 handleClientData(client_fd);
             }
+        }
+
+        // Check if background AOF compaction thread has finished
+        if(handler_.getStorage().isRewriteFinished())
+        {
+            handler_.getStorage().finalizeAOF();
         }
     }
 

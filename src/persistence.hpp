@@ -10,6 +10,8 @@ private:
 public:
     explicit Persistence(const std::string& filename = "helixkv.aof");
 
+    std::string getFilename() const;
+
     void append(const std::string& op, const std::string& key, const std::string& value = "");
 
     void rewrite(const std::unordered_map<std::string, std::string>& data);
