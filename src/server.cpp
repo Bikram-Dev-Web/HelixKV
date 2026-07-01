@@ -3,10 +3,23 @@
 #include <iostream>
 #include <thread>
 
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#ifdef _WIN32
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #define CLOSE_SOCKET(s) closesocket(s)
+  #define IS_VALIDSOCKET(s) ((s) != INVALID_SOCKET)
+  #ifdef _MSC_VER
+    #include <BaseTsd.h>
+    typedef SSIZE_T ssize_t;
+  #endif
+#else
+  #include <sys/socket.h>
+  #include <netinet/in.h>
+  #include <arpa/inet.h>
+  #include <unistd.h>
+  #define CLOSE_SOCKET(s) ::close(s)
+  #define IS_VALIDSOCKET(s) ((s) >= 0)
+#endif
 
 Server::Server(int port)
     : port_(port)
@@ -15,14 +28,26 @@ Server::Server(int port)
 
 void Server::start()
 {
-    int server_fd =
+#ifdef _WIN32
+    WSADATA wsaData;
+    int wsa_err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (wsa_err != 0) {
+        std::cerr << "WSAStartup failed with error: " << wsa_err << std::endl;
+        return;
+    }
+#endif
+
+    socket_t server_fd =
         socket(AF_INET,
                SOCK_STREAM,
                0);
 
-    if(server_fd < 0)
+    if(!IS_VALIDSOCKET(server_fd))
     {
         perror("socket");
+#ifdef _WIN32
+        WSACleanup();
+#endif
         return;
     }
 
@@ -34,16 +59,24 @@ void Server::start()
 
     if(bind(server_fd,
             (sockaddr*)&address,
-            sizeof(address)) < 0)
+            sizeof(address)) != 0)
     {
         perror("bind");
+        CLOSE_SOCKET(server_fd);
+#ifdef _WIN32
+        WSACleanup();
+#endif
         return;
     }
 
     if(listen(server_fd,
-              SOMAXCONN) < 0)
+              SOMAXCONN) != 0)
     {
         perror("listen");
+        CLOSE_SOCKET(server_fd);
+#ifdef _WIN32
+        WSACleanup();
+#endif
         return;
     }
 
@@ -54,12 +87,12 @@ void Server::start()
 
     while(true)
     {
-        int client_fd =
+        socket_t client_fd =
             accept(server_fd,
                    nullptr,
                    nullptr);
 
-        if(client_fd < 0)
+        if(!IS_VALIDSOCKET(client_fd))
         {
             perror("accept");
             continue;
@@ -74,9 +107,14 @@ void Server::start()
             client_fd
         ).detach();
     }
+
+    CLOSE_SOCKET(server_fd);
+#ifdef _WIN32
+    WSACleanup();
+#endif
 }
 
-void Server::handleClient(int client_fd)
+void Server::handleClient(socket_t client_fd)
 {
     while(true)
     {
@@ -85,7 +123,7 @@ void Server::handleClient(int client_fd)
         ssize_t bytes_received =
             recv(client_fd,
                  buffer,
-                 sizeof(buffer),
+                 sizeof(buffer) - 1,
                  0);
 
         if(bytes_received == 0)
@@ -117,5 +155,5 @@ void Server::handleClient(int client_fd)
         );
     }
 
-    close(client_fd);
+    CLOSE_SOCKET(client_fd);
 }

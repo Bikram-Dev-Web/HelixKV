@@ -12,7 +12,7 @@ Storage::Storage()
 void Storage::set(const string& key , const string& value){
     std::lock_guard<std::mutex> lock(mutex_);
     data_[key]=value;
-    persistence_.save(data_);
+    persistence_.append("SET", key, value);
 }
 
 string Storage::get(const string& key){
@@ -35,7 +35,7 @@ void Storage::del(const string& key){
     }
 
     data_.erase(key);
-    persistence_.save(data_);
+    persistence_.append("DEL", key);
 }
 
 bool Storage::exist(const string& key){
@@ -44,4 +44,24 @@ bool Storage::exist(const string& key){
 
     if(it==data_.end()){return false;}
     return true;
+}
+
+std::vector<std::string> Storage::keys() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> all_keys;
+    for (const auto& [key, _] : data_) {
+        all_keys.push_back(key);
+    }
+    return all_keys;
+}
+
+size_t Storage::size() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return data_.size();
+}
+
+void Storage::clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    data_.clear();
+    persistence_.append("CLEAR", "");
 }

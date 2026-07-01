@@ -19,3 +19,7 @@ target_link_libraries(
     helixkv
     Threads::Threads
 )
+
+if(WIN32)
+    target_link_libraries(helixkv ws2_32)
+endif()

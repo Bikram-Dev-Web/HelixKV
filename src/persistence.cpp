@@ -1,31 +1,40 @@
 #include "persistence.hpp"
-
-#include<fstream>
-#include<iostream>
+#include <fstream>
+#include <iostream>
+#include <sstream>
 
 Persistence::Persistence(const std::string& filename)
-    :filename_(filename){
+    : filename_(filename)
+{
+}
 
-    }
+void Persistence::append(const std::string& op, const std::string& key, const std::string& value)
+{
+    std::ofstream file(filename_, std::ios::app);
 
-void Persistence::save(const std::unordered_map<std::string , std::string>& data)    {
-    std::ofstream file(filename_);
-
-    if(!file.is_open()){
-        std::cerr<<"Failed to open file for writing\n";
+    if(!file.is_open())
+    {
+        std::cerr << "Failed to open AOF file for appending: " << filename_ << "\n";
         return;
     }
-    for(const auto& [key , value]:data){
-        file<<key
-            <<"="
-            <<value
-            <<"\n";
+
+    if(op == "SET")
+    {
+        file << "SET " << key << " " << value << "\n";
+    }
+    else if(op == "DEL")
+    {
+        file << "DEL " << key << "\n";
+    }
+    else if(op == "CLEAR")
+    {
+        file << "CLEAR\n";
     }
 }
 
-std::unordered_map<std::string , std::string> Persistence::load(){
-    std::unordered_map<std::string,std::string> data;
-
+std::unordered_map<std::string, std::string> Persistence::load()
+{
+    std::unordered_map<std::string, std::string> data;
     std::ifstream file(filename_);
 
     if(!file.is_open())
@@ -37,22 +46,34 @@ std::unordered_map<std::string , std::string> Persistence::load(){
 
     while(std::getline(file, line))
     {
-        std::size_t pos = line.find('=');
+        std::stringstream ss(line);
+        std::string op, key;
 
-        if(pos == std::string::npos)
+        if(ss >> op)
         {
-            continue;
+            if(op == "SET")
+            {
+                if(ss >> key)
+                {
+                    std::string value;
+                    ss >> std::ws;
+                    std::getline(ss, value);
+                    data[key] = value;
+                }
+            }
+            else if(op == "DEL")
+            {
+                if(ss >> key)
+                {
+                    data.erase(key);
+                }
+            }
+            else if(op == "CLEAR")
+            {
+                data.clear();
+            }
         }
-
-        std::string key =
-            line.substr(0, pos);
-
-        std::string value =
-            line.substr(pos + 1);
-
-        data[key] = value;
     }
 
     return data;
-
 }

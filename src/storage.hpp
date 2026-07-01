@@ -2,21 +2,24 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include "persistence.hpp"
-#include<mutex>
-using namespace std; 
+#include <mutex>
 
 class Storage
 {
 private:
-    unordered_map<string,string> data_;
+    std::unordered_map<std::string, std::string> data_;
     Persistence persistence_;
     std::mutex mutex_;
 public:
     Storage();
-    void set(const string& key , const string& value);
-    string get(const string& key);
-    void del(const string& key);
-    bool exist(const string& key);
+    void set(const std::string& key, const std::string& value);
+    std::string get(const std::string& key);
+    void del(const std::string& key);
+    bool exist(const std::string& key);
+    std::vector<std::string> keys();
+    size_t size();
+    void clear();
 };
 

@@ -8,9 +8,9 @@ class Persistence
 private:
     std::string filename_;
 public:
-    explicit Persistence(const std::string& filename = "helixkv.db");
+    explicit Persistence(const std::string& filename = "helixkv.aof");
 
-    void save(const std::unordered_map<std::string , std::string>& data);
+    void append(const std::string& op, const std::string& key, const std::string& value = "");
 
     std::unordered_map<std::string , std::string> load();
 
