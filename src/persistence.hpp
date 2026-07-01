@@ -11,6 +11,7 @@ public:
     explicit Persistence(const std::string& filename = "helixkv.aof");
 
     std::string getFilename() const;
+    size_t getFileSize() const;
 
     void append(const std::string& op, const std::string& key, const std::string& value = "");
 

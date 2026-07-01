@@ -21,6 +21,13 @@ private:
     std::vector<std::string> rewrite_buffer_;
     std::thread rewrite_thread_;
 
+    // Auto-Compaction Trigger configurations
+    size_t last_rewrite_size_{0};
+    void checkAutoRewrite();
+    void rewriteAOF_Lockless();
+    const size_t AUTO_AOF_REWRITE_MIN_SIZE = 1024;      // 1KB threshold for test viability
+    const size_t AUTO_AOF_REWRITE_PERCENTAGE = 100;    // Compacts if size doubles (100% growth)
+
 public:
     Storage();
     ~Storage();

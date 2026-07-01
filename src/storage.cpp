@@ -8,6 +8,7 @@ using namespace std;
 Storage::Storage()
 {
     data_ = persistence_.load();
+    last_rewrite_size_ = persistence_.getFileSize();
 }
 
 Storage::~Storage()
@@ -24,6 +25,7 @@ void Storage::set(const string& key , const string& value){
     if (is_rewriting_) {
         rewrite_buffer_.push_back("SET " + key + " " + value);
     }
+    checkAutoRewrite();
 }
 
 string Storage::get(const string& key){
@@ -50,6 +52,7 @@ void Storage::del(const string& key){
     if (is_rewriting_) {
         rewrite_buffer_.push_back("DEL " + key);
     }
+    checkAutoRewrite();
 }
 
 bool Storage::exist(const string& key){
@@ -81,10 +84,15 @@ void Storage::clear() {
     if (is_rewriting_) {
         rewrite_buffer_.push_back("CLEAR");
     }
+    checkAutoRewrite();
 }
 
 void Storage::rewriteAOF() {
     std::lock_guard<std::mutex> lock(mutex_);
+    rewriteAOF_Lockless();
+}
+
+void Storage::rewriteAOF_Lockless() {
     if (is_rewriting_) {
         return; // Compaction already running
     }
@@ -147,5 +155,22 @@ void Storage::finalizeAOF()
     is_rewriting_ = false;
     rewrite_done_ = false;
 
+    // Update baseline compaction file size
+    last_rewrite_size_ = persistence_.getFileSize();
+
     std::cout << "Background AOF rewrite finalized successfully." << std::endl;
+}
+
+void Storage::checkAutoRewrite() {
+    if (is_rewriting_) {
+        return;
+    }
+    size_t current_size = persistence_.getFileSize();
+    if (current_size >= AUTO_AOF_REWRITE_MIN_SIZE) {
+        if (last_rewrite_size_ == 0 || current_size >= last_rewrite_size_ * (1 + AUTO_AOF_REWRITE_PERCENTAGE / 100.0)) {
+            std::cout << "Auto-compaction triggered. Current AOF size: " << current_size 
+                      << " bytes, Last rewrite size: " << last_rewrite_size_ << " bytes." << std::endl;
+            rewriteAOF_Lockless();
+        }
+    }
 }

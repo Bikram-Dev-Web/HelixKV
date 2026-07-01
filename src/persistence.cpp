@@ -38,6 +38,12 @@ std::string Persistence::getFilename() const
     return filename_;
 }
 
+size_t Persistence::getFileSize() const
+{
+    std::ifstream file(filename_, std::ios::binary | std::ios::ate);
+    return file.is_open() ? static_cast<size_t>(file.tellg()) : 0;
+}
+
 void Persistence::rewrite(const std::unordered_map<std::string, std::string>& data)
 {
     std::string temp_filename = filename_ + ".tmp";
