@@ -61,6 +61,10 @@ std::string CommandHandler::handle(const std::string& command){
         storage_.clear();
         return "OK\n";
     }
+    else if(cmd=="BGREWRITEAOF"){
+        storage_.rewriteAOF();
+        return "OK\n";
+    }
     else if(cmd=="INFO"){
         std::string info = "# Server\n";
         info += "helixkv_version:0.1.0\n";

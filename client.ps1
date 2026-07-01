@@ -12,7 +12,7 @@ try {
     $writer.AutoFlush = $true
 
     Write-Host "Connected successfully!" -ForegroundColor Green
-    Write-Host "You can type commands like 'SET key value', 'GET key', 'DEL key', 'EXISTS key', 'KEYS', 'SIZE', 'CLEAR', 'INFO', or 'PING'." -ForegroundColor Gray
+    Write-Host "You can type commands like 'SET key value', 'GET key', 'DEL key', 'EXISTS key', 'KEYS', 'SIZE', 'CLEAR', 'BGREWRITEAOF', 'INFO', or 'PING'." -ForegroundColor Gray
     Write-Host "Type 'exit' to quit." -ForegroundColor Gray
     Write-Host ""
 

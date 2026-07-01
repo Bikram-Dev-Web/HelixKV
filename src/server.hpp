@@ -1,6 +1,7 @@
 #pragma once
 
 #include "command_handler.hpp"
+#include <vector>
 
 #ifdef _WIN32
   #include <winsock2.h>
@@ -17,11 +18,13 @@ public:
     void start();
 
 private:
-    void handleClient(socket_t client_fd);
+    void handleClientData(socket_t client_fd);
 
     int port_;
 
     CommandHandler handler_;
+
+    std::vector<socket_t> clients_;
 };
 
 

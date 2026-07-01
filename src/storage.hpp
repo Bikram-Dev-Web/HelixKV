@@ -21,5 +21,6 @@ public:
     std::vector<std::string> keys();
     size_t size();
     void clear();
+    void rewriteAOF();
 };
 

@@ -65,3 +65,8 @@ void Storage::clear() {
     data_.clear();
     persistence_.append("CLEAR", "");
 }
+
+void Storage::rewriteAOF() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    persistence_.rewrite(data_);
+}
