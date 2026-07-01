@@ -12,4 +12,6 @@
 *.log
 *.aof
 *.db
+/dev_history.md
+
 
