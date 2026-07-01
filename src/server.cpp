@@ -175,6 +175,7 @@ void Server::start()
         CLOSE_SOCKET(client_fd);
     }
     clients_.clear();
+    client_buffers_.clear();
 
     CLOSE_SOCKET(server_fd);
 #ifdef _WIN32
@@ -184,7 +185,7 @@ void Server::start()
 
 void Server::handleClientData(socket_t client_fd)
 {
-    char buffer[1024] = {0};
+    char buffer[4096] = {0};
 
     ssize_t bytes_received =
         recv(client_fd,
@@ -197,6 +198,7 @@ void Server::handleClientData(socket_t client_fd)
         std::cout << "Client disconnected\n";
         CLOSE_SOCKET(client_fd);
         clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+        client_buffers_.erase(client_fd);
         return;
     }
 
@@ -208,29 +210,89 @@ void Server::handleClientData(socket_t client_fd)
             std::cout << "Client disconnected abruptly (error: " << err << ")\n";
             CLOSE_SOCKET(client_fd);
             clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+            client_buffers_.erase(client_fd);
         }
 #else
         if (errno != EWOULDBLOCK && errno != EAGAIN) {
             perror("recv");
             CLOSE_SOCKET(client_fd);
             clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+            client_buffers_.erase(client_fd);
         }
 #endif
         return;
     }
 
-    std::string command(
-        buffer,
-        bytes_received
-    );
+    // Accumulate stream data
+    client_buffers_[client_fd].append(buffer, bytes_received);
 
-    std::string response =
-        handler_.handle(command);
+    // Guard against huge input buffer exhaust attack (64KB limit)
+    if(client_buffers_[client_fd].size() > 65536)
+    {
+        std::cerr << "Client buffer limit exceeded (64KB). Closing connection." << std::endl;
+        CLOSE_SOCKET(client_fd);
+        clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+        client_buffers_.erase(client_fd);
+        return;
+    }
 
-    send(
-        client_fd,
-        response.c_str(),
-        (int)response.size(),
-        0
-    );
+    // Process all full newline-delimited commands
+    std::string& client_buf = client_buffers_[client_fd];
+    size_t newline_pos;
+    while((newline_pos = client_buf.find('\n')) != std::string::npos)
+    {
+        std::string command = client_buf.substr(0, newline_pos);
+        
+        // Remove trailing \r if present (Telnet/network compatibility)
+        if(!command.empty() && command.back() == '\r')
+        {
+            command.pop_back();
+        }
+
+        if(!command.empty())
+        {
+            std::string response = handler_.handle(command);
+            
+            // Handle partial writes in a loop
+            size_t total_sent = 0;
+            const char* resp_ptr = response.c_str();
+            size_t resp_len = response.size();
+            bool write_failed = false;
+
+            while(total_sent < resp_len)
+            {
+                int sent = ::send(client_fd, resp_ptr + total_sent, (int)(resp_len - total_sent), 0);
+                if(sent <= 0)
+                {
+#ifdef _WIN32
+                    int err = WSAGetLastError();
+                    if(err != WSAEWOULDBLOCK) {
+                        write_failed = true;
+                        break;
+                    }
+#else
+                    if(errno != EWOULDBLOCK && errno != EAGAIN) {
+                        write_failed = true;
+                        break;
+                    }
+#endif
+                    std::this_thread::yield();
+                    continue;
+                }
+                total_sent += sent;
+            }
+
+            if(write_failed)
+            {
+                std::cerr << "Client write failed. Closing socket." << std::endl;
+                CLOSE_SOCKET(client_fd);
+                clients_.erase(std::remove(clients_.begin(), clients_.end(), client_fd), clients_.end());
+                client_buffers_.erase(client_fd);
+                return;
+            }
+        }
+
+        // Erase command from session buffer
+        client_buf.erase(0, newline_pos + 1);
+    }
 }

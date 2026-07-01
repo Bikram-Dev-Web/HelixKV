@@ -2,6 +2,7 @@
 
 #include "command_handler.hpp"
 #include <vector>
+#include <unordered_map>
 
 #ifdef _WIN32
   #include <winsock2.h>
@@ -25,6 +26,7 @@ private:
     CommandHandler handler_;
 
     std::vector<socket_t> clients_;
+
+    // Per-client stream buffers to handle partial reads/writes
+    std::unordered_map<socket_t, std::string> client_buffers_;
 };
-
-
