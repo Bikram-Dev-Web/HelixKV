@@ -20,5 +20,9 @@ public:
 
     void load(std::unordered_map<std::string, std::string>& data, std::unordered_map<std::string, std::uint64_t>& expirations);
 
+    void saveRDB(const std::string& rdb_filename, const std::unordered_map<std::string, std::string>& data, const std::unordered_map<std::string, std::uint64_t>& expirations);
+
+    bool loadRDB(const std::string& rdb_filename, std::unordered_map<std::string, std::string>& data, std::unordered_map<std::string, std::uint64_t>& expirations);
+
 
 };

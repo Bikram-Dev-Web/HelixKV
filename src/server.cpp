@@ -169,6 +169,12 @@ void Server::start()
             handler_.getStorage().finalizeAOF();
         }
 
+        // Check if background RDB save thread has finished
+        if(handler_.getStorage().isSavingRdbFinished())
+        {
+            handler_.getStorage().finalizeRdbSave();
+        }
+
         // Passively evict expired keys every 5 seconds
         static auto last_cleanup = std::chrono::steady_clock::now();
         auto now = std::chrono::steady_clock::now();

@@ -22,6 +22,11 @@ private:
     std::vector<std::string> rewrite_buffer_;
     std::thread rewrite_thread_;
 
+    // Background RDB Save State
+    std::atomic<bool> is_saving_rdb_{false};
+    std::atomic<bool> save_rdb_done_{false};
+    std::thread save_rdb_thread_;
+
     // Auto-Compaction Trigger configurations
     size_t last_rewrite_size_{0};
     void checkAutoRewrite();
@@ -54,5 +59,12 @@ public:
     int expire(const std::string& key, std::uint64_t seconds);
     int64_t ttl(const std::string& key);
     void cleanupExpiredKeys();
+
+    // RDB Snapshot Operations
+    bool saveRdbSync();
+    bool saveRdbAsync();
+    bool isSavingRdbFinished();
+    void finalizeRdbSave();
+    bool isSavingRdb() const;
 };
 

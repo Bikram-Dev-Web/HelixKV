@@ -245,6 +245,50 @@ void test_resp_protocol_formatting() {
     std::cout << "test_resp_protocol_formatting passed!" << std::endl;
 }
 
+void test_rdb_snapshotting() {
+    std::cout << "Running test_rdb_snapshotting..." << std::endl;
+    std::remove("test_helixkv.rdb");
+    std::remove("test_helixkv.rdb.tmp");
+    
+    {
+        Persistence p("test_helixkv.aof");
+        std::unordered_map<std::string, std::string> data;
+        std::unordered_map<std::string, std::uint64_t> expirations;
+        
+        data["t1"] = "hello";
+        data["t2"] = "world";
+        
+        std::uint64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        expirations["t2"] = now_sec + 300;
+
+        p.saveRDB("test_helixkv.rdb", data, expirations);
+    }
+
+    // Verify RDB file exists
+    std::ifstream file("test_helixkv.rdb", std::ios::binary);
+    assert(file.good() == true);
+    file.close();
+
+    // Reload from RDB
+    {
+        std::unordered_map<std::string, std::string> data;
+        std::unordered_map<std::string, std::uint64_t> expirations;
+        Persistence p("test_helixkv.aof");
+        
+        bool ok = p.loadRDB("test_helixkv.rdb", data, expirations);
+        assert(ok == true);
+        assert(data.size() == 2);
+        assert(data["t1"] == "hello");
+        assert(data["t2"] == "world");
+        assert(expirations.count("t2") == 1);
+        assert(expirations["t2"] > 0);
+    }
+
+    std::remove("test_helixkv.rdb");
+    std::cout << "test_rdb_snapshotting passed!" << std::endl;
+}
+
 int main() {
     std::cout << "=== HelixKV Test Suite ===" << std::endl;
     
@@ -254,6 +298,7 @@ int main() {
     test_asynchronous_compaction();
     test_key_expiration_and_ttls();
     test_resp_protocol_formatting();
+    test_rdb_snapshotting();
 
     std::cout << "\nALL TESTS PASSED SUCCESSFULLY!" << std::endl;
     return 0;

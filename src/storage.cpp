@@ -8,7 +8,23 @@ using namespace std;
 
 Storage::Storage()
 {
-    persistence_.load(data_, expirations_);
+    std::string aof_name = persistence_.getFilename();
+    std::ifstream aof_file(aof_name);
+    if (aof_file.good()) {
+        aof_file.close();
+        std::cout << "Loading state from AOF file: " << aof_name << std::endl;
+        persistence_.load(data_, expirations_);
+    } else {
+        std::string rdb_name = "helixkv.rdb";
+        std::ifstream rdb_file(rdb_name, std::ios::binary);
+        if (rdb_file.good()) {
+            rdb_file.close();
+            std::cout << "AOF not found. Loading state from RDB file: " << rdb_name << std::endl;
+            persistence_.loadRDB(rdb_name, data_, expirations_);
+        } else {
+            std::cout << "No persistence files found. Starting fresh." << std::endl;
+        }
+    }
     last_rewrite_size_ = persistence_.getFileSize();
 }
 
@@ -16,6 +32,9 @@ Storage::~Storage()
 {
     if (rewrite_thread_.joinable()) {
         rewrite_thread_.join();
+    }
+    if (save_rdb_thread_.joinable()) {
+        save_rdb_thread_.join();
     }
 }
 
@@ -304,4 +323,50 @@ void Storage::cleanupExpiredKeys() {
         }
         std::cout << "Passively evicted expired key: " << key << std::endl;
     }
+}
+
+bool Storage::saveRdbSync() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    persistence_.saveRDB("helixkv.rdb", data_, expirations_);
+    return true;
+}
+
+bool Storage::saveRdbAsync() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (is_saving_rdb_ || is_rewriting_) {
+        return false; // Exclusivity check to prevent disk thrashing
+    }
+    is_saving_rdb_ = true;
+    save_rdb_done_ = false;
+
+    if (save_rdb_thread_.joinable()) {
+        save_rdb_thread_.join();
+    }
+
+    std::unordered_map<std::string, std::string> snapshot = data_;
+    std::unordered_map<std::string, std::uint64_t> snapshot_exp = expirations_;
+
+    save_rdb_thread_ = std::thread([this, snapshot, snapshot_exp]() {
+        persistence_.saveRDB("helixkv.rdb", snapshot, snapshot_exp);
+        save_rdb_done_ = true;
+    });
+    return true;
+}
+
+bool Storage::isSavingRdbFinished() {
+    return save_rdb_done_;
+}
+
+void Storage::finalizeRdbSave() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (save_rdb_thread_.joinable()) {
+        save_rdb_thread_.join();
+    }
+    is_saving_rdb_ = false;
+    save_rdb_done_ = false;
+    std::cout << "Background RDB save finalized successfully." << std::endl;
+}
+
+bool Storage::isSavingRdb() const {
+    return is_saving_rdb_;
 }

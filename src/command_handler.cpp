@@ -141,6 +141,18 @@ std::string CommandHandler::handleCommand(const std::vector<std::string>& parts,
         storage_.rewriteAOF();
         return is_resp ? makeSimpleString("Background rewrite of AOF started") : "Background rewrite of AOF started\n";
     }
+    else if (cmd == "SAVE") {
+        storage_.saveRdbSync();
+        return is_resp ? makeSimpleString("OK") : "OK\n";
+    }
+    else if (cmd == "BGSAVE") {
+        bool started = storage_.saveRdbAsync();
+        if (started) {
+            return is_resp ? makeSimpleString("Background saving started") : "Background saving started\n";
+        } else {
+            return is_resp ? makeError("ERR Background save already in progress or AOF rewrite in progress") : "ERR Background save already in progress or AOF rewrite in progress\n";
+        }
+    }
     else if (cmd == "INFO") {
         std::string info = "# Server\n";
         info += "helixkv_version:0.1.0\n";

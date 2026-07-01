@@ -145,3 +145,132 @@ void Persistence::load(std::unordered_map<std::string, std::string>& data, std::
         expirations.erase(key);
     }
 }
+
+void Persistence::saveRDB(const std::string& rdb_filename, const std::unordered_map<std::string, std::string>& data, const std::unordered_map<std::string, std::uint64_t>& expirations)
+{
+    std::string temp_filename = rdb_filename + ".tmp";
+    std::ofstream file(temp_filename, std::ios::binary);
+
+    if(!file.is_open())
+    {
+        std::cerr << "Failed to open temporary RDB file for saving: " << temp_filename << "\n";
+        return;
+    }
+
+    // Write Magic (8 bytes)
+    file.write("HELIXRDB", 8);
+    // Write Version (4 bytes)
+    file.write("0001", 4);
+
+    // Write size of map (uint64_t)
+    std::uint64_t size = data.size();
+    file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+
+    for(const auto& [key, value] : data)
+    {
+        std::uint8_t has_expire = 0;
+        std::uint64_t expire_time = 0;
+        auto exp_it = expirations.find(key);
+        if (exp_it != expirations.end()) {
+            has_expire = 1;
+            expire_time = exp_it->second;
+        }
+
+        // Write has_expire flag
+        file.write(reinterpret_cast<const char*>(&has_expire), sizeof(has_expire));
+        if (has_expire) {
+            file.write(reinterpret_cast<const char*>(&expire_time), sizeof(expire_time));
+        }
+
+        // Write key length & key data
+        std::uint32_t key_len = key.size();
+        file.write(reinterpret_cast<const char*>(&key_len), sizeof(key_len));
+        file.write(key.data(), key_len);
+
+        // Write value length & value data
+        std::uint32_t val_len = value.size();
+        file.write(reinterpret_cast<const char*>(&val_len), sizeof(val_len));
+        file.write(value.data(), val_len);
+    }
+
+    file.close();
+
+    // Overwrite real RDB file
+    std::remove(rdb_filename.c_str());
+    if(std::rename(temp_filename.c_str(), rdb_filename.c_str()) != 0)
+    {
+        std::perror("Failed to finalize RDB snapshot rename");
+    }
+}
+
+bool Persistence::loadRDB(const std::string& rdb_filename, std::unordered_map<std::string, std::string>& data, std::unordered_map<std::string, std::uint64_t>& expirations)
+{
+    std::ifstream file(rdb_filename, std::ios::binary);
+    if(!file.is_open())
+    {
+        return false;
+    }
+
+    char magic[8];
+    char version[4];
+
+    file.read(magic, 8);
+    file.read(version, 4);
+
+    if (file.gcount() < 4 || std::string(magic, 8) != "HELIXRDB" || std::string(version, 4) != "0001") {
+        std::cerr << "Invalid or corrupted RDB file header." << std::endl;
+        file.close();
+        return false;
+    }
+
+    std::uint64_t key_count = 0;
+    file.read(reinterpret_cast<char*>(&key_count), sizeof(key_count));
+    if (file.gcount() < static_cast<std::streamsize>(sizeof(key_count))) {
+        file.close();
+        return false;
+    }
+
+    std::uint64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    for(std::uint64_t i = 0; i < key_count; ++i)
+    {
+        std::uint8_t has_expire = 0;
+        file.read(reinterpret_cast<char*>(&has_expire), sizeof(has_expire));
+
+        std::uint64_t expire_time = 0;
+        if (has_expire) {
+            file.read(reinterpret_cast<char*>(&expire_time), sizeof(expire_time));
+        }
+
+        std::uint32_t key_len = 0;
+        file.read(reinterpret_cast<char*>(&key_len), sizeof(key_len));
+        
+        std::string key(key_len, '\0');
+        file.read(&key[0], key_len);
+
+        std::uint32_t val_len = 0;
+        file.read(reinterpret_cast<char*>(&val_len), sizeof(val_len));
+        
+        std::string value(val_len, '\0');
+        file.read(&value[0], val_len);
+
+        if (file.fail()) {
+            std::cerr << "Error reading key-value pair from RDB." << std::endl;
+            file.close();
+            return false;
+        }
+
+        if (has_expire && expire_time <= now_sec) {
+            continue; // Expired, discard
+        }
+
+        data[key] = value;
+        if (has_expire) {
+            expirations[key] = expire_time;
+        }
+    }
+
+    file.close();
+    return true;
+}
