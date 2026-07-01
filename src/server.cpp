@@ -167,6 +167,15 @@ void Server::start()
         {
             handler_.getStorage().finalizeAOF();
         }
+
+        // Passively evict expired keys every 5 seconds
+        static auto last_cleanup = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_cleanup).count() >= 5)
+        {
+            handler_.getStorage().cleanupExpiredKeys();
+            last_cleanup = now;
+        }
     }
 
     // Cleanup sockets on server exit

@@ -3,6 +3,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdio>
+#include <chrono>
 
 Persistence::Persistence(const std::string& filename)
     : filename_(filename)
@@ -31,6 +32,10 @@ void Persistence::append(const std::string& op, const std::string& key, const st
     {
         file << "CLEAR\n";
     }
+    else if(op == "EXPIREAT")
+    {
+        file << "EXPIREAT " << key << " " << value << "\n";
+    }
 }
 
 std::string Persistence::getFilename() const
@@ -44,7 +49,7 @@ size_t Persistence::getFileSize() const
     return file.is_open() ? static_cast<size_t>(file.tellg()) : 0;
 }
 
-void Persistence::rewrite(const std::unordered_map<std::string, std::string>& data)
+void Persistence::rewrite(const std::unordered_map<std::string, std::string>& data, const std::unordered_map<std::string, std::uint64_t>& expirations)
 {
     std::string temp_filename = filename_ + ".tmp";
     std::ofstream file(temp_filename);
@@ -58,18 +63,21 @@ void Persistence::rewrite(const std::unordered_map<std::string, std::string>& da
     for(const auto& [key, value] : data)
     {
         file << "SET " << key << " " << value << "\n";
+        auto it = expirations.find(key);
+        if (it != expirations.end()) {
+            file << "EXPIREAT " << key << " " << it->second << "\n";
+        }
     }
     file.close();
 }
 
-std::unordered_map<std::string, std::string> Persistence::load()
+void Persistence::load(std::unordered_map<std::string, std::string>& data, std::unordered_map<std::string, std::uint64_t>& expirations)
 {
-    std::unordered_map<std::string, std::string> data;
     std::ifstream file(filename_);
 
     if(!file.is_open())
     {
-        return data;
+        return;
     }
 
     std::string line;
@@ -89,6 +97,7 @@ std::unordered_map<std::string, std::string> Persistence::load()
                     ss >> std::ws;
                     std::getline(ss, value);
                     data[key] = value;
+                    expirations.erase(key);
                 }
             }
             else if(op == "DEL")
@@ -96,14 +105,43 @@ std::unordered_map<std::string, std::string> Persistence::load()
                 if(ss >> key)
                 {
                     data.erase(key);
+                    expirations.erase(key);
                 }
             }
             else if(op == "CLEAR")
             {
                 data.clear();
+                expirations.clear();
+            }
+            else if(op == "EXPIREAT")
+            {
+                std::string timestamp_str;
+                if(ss >> key >> timestamp_str)
+                {
+                    try {
+                        expirations[key] = std::stoull(timestamp_str);
+                    } catch (...) {
+                        // ignore malformed lines
+                    }
+                }
             }
         }
     }
+    file.close();
 
-    return data;
+    // Evict keys that expired while the server was offline
+    auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    std::vector<std::string> expired_keys;
+    for (const auto& [key, expire_time] : expirations) {
+        if (expire_time <= static_cast<std::uint64_t>(now_sec)) {
+            expired_keys.push_back(key);
+        }
+    }
+
+    for (const auto& key : expired_keys) {
+        data.erase(key);
+        expirations.erase(key);
+    }
 }

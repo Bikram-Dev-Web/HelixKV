@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <cstdint>
 
 class Persistence
 {
@@ -15,9 +16,9 @@ public:
 
     void append(const std::string& op, const std::string& key, const std::string& value = "");
 
-    void rewrite(const std::unordered_map<std::string, std::string>& data);
+    void rewrite(const std::unordered_map<std::string, std::string>& data, const std::unordered_map<std::string, std::uint64_t>& expirations);
 
-    std::unordered_map<std::string , std::string> load();
+    void load(std::unordered_map<std::string, std::string>& data, std::unordered_map<std::string, std::uint64_t>& expirations);
 
 
 };

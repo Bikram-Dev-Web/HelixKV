@@ -12,6 +12,7 @@ class Storage
 {
 private:
     std::unordered_map<std::string, std::string> data_;
+    std::unordered_map<std::string, std::uint64_t> expirations_; // Key -> Absolute epoch seconds expiration
     Persistence persistence_;
     std::mutex mutex_;
 
@@ -27,6 +28,9 @@ private:
     void rewriteAOF_Lockless();
     const size_t AUTO_AOF_REWRITE_MIN_SIZE = 1024;      // 1KB threshold for test viability
     const size_t AUTO_AOF_REWRITE_PERCENTAGE = 100;    // Compacts if size doubles (100% growth)
+
+    // Active eviction checker (returns true if key was evicted)
+    bool checkAndEvict(const std::string& key);
 
 public:
     Storage();
@@ -45,5 +49,10 @@ public:
     bool isRewriteFinished();
     void finalizeAOF();
     bool isRewriting() const;
+
+    // Key TTL Operations
+    int expire(const std::string& key, std::uint64_t seconds);
+    int64_t ttl(const std::string& key);
+    void cleanupExpiredKeys();
 };
 

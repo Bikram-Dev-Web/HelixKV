@@ -61,6 +61,25 @@ std::string CommandHandler::handle(const std::string& command){
         storage_.clear();
         return "OK\n";
     }
+    else if(cmd=="EXPIRE"){
+        if(parts.size()<3){
+            return "ERR usage: EXPIRE key seconds\n";
+        }
+        try {
+            std::uint64_t seconds = std::stoull(parts[2]);
+            int res = storage_.expire(parts[1], seconds);
+            return std::to_string(res) + "\n";
+        } catch (...) {
+            return "ERR value is not an integer or out of range\n";
+        }
+    }
+    else if(cmd=="TTL"){
+        if(parts.size()<2){
+            return "ERR usage: TTL key\n";
+        }
+        int64_t res = storage_.ttl(parts[1]);
+        return std::to_string(res) + "\n";
+    }
     else if(cmd=="BGREWRITEAOF"){
         if (storage_.isRewriting()) {
             return "ERR Background rewrite already in progress\n";

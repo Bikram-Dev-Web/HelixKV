@@ -60,12 +60,10 @@ void test_persistence_aof_replay() {
 
     // Load it via Storage and verify correct replay state
     {
-        // Storage constructor loads from the default/previously-saved DB file. 
-        // We configure Persistence to use "test_helixkv.aof" temporarily by instantiating inside Storage.
-        // Wait, Storage constructor initializes Persistence default filename ("helixkv.aof").
-        // To force a custom file for testing, we can temporarily inspect the Persistence class directly:
+        std::unordered_map<std::string, std::string> data;
+        std::unordered_map<std::string, std::uint64_t> expirations;
         Persistence p("test_helixkv.aof");
-        auto data = p.load();
+        p.load(data, expirations);
         assert(data.size() == 2);
         assert(data["y"] == "200");
         assert(data["z"] == "300");
@@ -152,6 +150,69 @@ void test_asynchronous_compaction() {
     std::cout << "test_asynchronous_compaction passed!" << std::endl;
 }
 
+void test_key_expiration_and_ttls() {
+    std::cout << "Running test_key_expiration_and_ttls..." << std::endl;
+    cleanup_files();
+    {
+        Storage db;
+        db.clear();
+        
+        // Expiry of non-existent key
+        assert(db.expire("nonexistent", 10) == 0);
+        assert(db.ttl("nonexistent") == -2);
+
+        // Expiry of active key
+        db.set("temp", "hello");
+        assert(db.ttl("temp") == -1); // No expire
+        assert(db.expire("temp", 2) == 1);
+        
+        int64_t remaining = db.ttl("temp");
+        assert(remaining > 0 && remaining <= 2);
+
+        // Sleep to wait for expiration
+        std::this_thread::sleep_for(std::chrono::milliseconds(2100));
+
+        // Active eviction check
+        assert(db.get("temp") == "NULL");
+        assert(db.ttl("temp") == -2);
+        assert(db.exist("temp") == false);
+    }
+    
+    // Test persistence AOF replay time durability
+    {
+        cleanup_files();
+        {
+            Persistence p("test_helixkv.aof");
+            p.append("SET", "t1", "v1");
+            
+            std::uint64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            
+            p.append("EXPIREAT", "t1", std::to_string(now_sec + 10)); // Expires in 10s
+            
+            p.append("SET", "t2", "v2");
+            p.append("EXPIREAT", "t2", std::to_string(now_sec - 5));  // Already expired
+        }
+        
+        // Load back and assert
+        std::unordered_map<std::string, std::string> data;
+        std::unordered_map<std::string, std::uint64_t> expirations;
+        Persistence p("test_helixkv.aof");
+        p.load(data, expirations);
+        
+        // t1 should survive, t2 should be discarded
+        assert(data.count("t1") == 1);
+        assert(data["t1"] == "v1");
+        assert(expirations.count("t1") == 1);
+        
+        assert(data.count("t2") == 0);
+        assert(expirations.count("t2") == 0);
+    }
+    
+    cleanup_files();
+    std::cout << "test_key_expiration_and_ttls passed!" << std::endl;
+}
+
 int main() {
     std::cout << "=== HelixKV Test Suite ===" << std::endl;
     
@@ -159,6 +220,7 @@ int main() {
     test_persistence_aof_replay();
     test_command_handler();
     test_asynchronous_compaction();
+    test_key_expiration_and_ttls();
 
     std::cout << "\nALL TESTS PASSED SUCCESSFULLY!" << std::endl;
     return 0;
